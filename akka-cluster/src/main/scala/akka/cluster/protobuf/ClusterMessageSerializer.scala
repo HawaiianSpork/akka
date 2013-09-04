@@ -169,10 +169,14 @@ class ClusterMessageSerializer(val system: ExtendedActorSystem) extends Serializ
       msg.GossipOverview.Seen(mapUniqueAddress(address), vectorClockToProto(version, hashMapping))
     }
 
-    def reachabilityToProto(reachability: Reachability): Vector[msg.Reachability] = {
-      reachability.allRecords.map(r ⇒
-        msg.Reachability(mapUniqueAddress(r.observer), mapUniqueAddress(r.subject),
-          msg.ReachabilityStatus.valueOf(reachabilityStatusToInt(r.status)), r.version))(breakOut)
+    def reachabilityToProto(reachability: Reachability): Vector[msg.ObserverReachability] = {
+      reachability.versions.map {
+        case (observer, version) ⇒
+          val subjectReachability = reachability.recordsFrom(observer).map(r ⇒
+            msg.SubjectReachability(mapUniqueAddress(r.subject),
+              msg.ReachabilityStatus.valueOf(reachabilityStatusToInt(r.status)), r.version))
+          msg.ObserverReachability(mapUniqueAddress(observer), version, subjectReachability)
+      }(breakOut)
     }
 
     val reachability = reachabilityToProto(gossip.overview.reachability)
@@ -213,13 +217,20 @@ class ClusterMessageSerializer(val system: ExtendedActorSystem) extends Serializ
     val roleMapping = gossip.allRoles
     val hashMapping = gossip.allHashes
 
-    def reachabilityFromProto(reachability: immutable.Seq[msg.Reachability]): Reachability = {
-      val records = reachability.map { row ⇒
-        val observer = addressMapping(row.observerAddressIndex)
-        val subject = addressMapping(row.subjectAddressIndex)
-        Reachability.Record(observer, subject, reachabilityStatusFromInt(row.status), row.version)
+    def reachabilityFromProto(observerReachability: immutable.Seq[msg.ObserverReachability]): Reachability = {
+      val recordBuilder = new immutable.VectorBuilder[Reachability.Record]
+      val versionsBuilder = new scala.collection.mutable.MapBuilder[UniqueAddress, Long, Map[UniqueAddress, Long]](Map.empty)
+      for (o ← observerReachability) {
+        val observer = addressMapping(o.addressIndex)
+        versionsBuilder += ((observer, o.version))
+        for (s ← o.subjectReachability) {
+          val subject = addressMapping(s.addressIndex)
+          val record = Reachability.Record(observer, subject, reachabilityStatusFromInt(s.status), s.version)
+          recordBuilder += record
+        }
       }
-      Reachability(records)
+
+      Reachability.create(recordBuilder.result(), versionsBuilder.result())
     }
 
     def memberFromProto(member: msg.Member) =
@@ -231,7 +242,7 @@ class ClusterMessageSerializer(val system: ExtendedActorSystem) extends Serializ
 
     val members: immutable.SortedSet[Member] = gossip.members.map(memberFromProto)(breakOut)
 
-    val reachability = reachabilityFromProto(gossip.overview.reachability)
+    val reachability = reachabilityFromProto(gossip.overview.observerReachability)
     val seen: immutable.TreeMap[UniqueAddress, VectorClock] = gossip.overview.seen.map(seenFromProto)(breakOut)
     val overview = GossipOverview(seen, reachability)
 

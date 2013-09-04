@@ -519,7 +519,6 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
 
         // replace member (changed status)
         val newMembers = localMembers - m + m
-        // FIXME #2307 why do we need removal from seen here?
         // remove nodes marked as DOWN from the `seen` table
         val newSeen = localSeen - m.uniqueAddress
 
@@ -549,7 +548,6 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
     }
   }
 
-  // FIXME #2307 don't we have to propagate change of seen table, even if same version?
   def receiveGossipStatus(status: GossipStatus): Unit = {
     val from = status.from
     if (!latestGossip.overview.reachability.isReachable(selfUniqueAddress, from))
@@ -869,11 +867,10 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
       val localOverview = localGossip.overview
       val localMembers = localGossip.members
 
-      // FIXME #2307 take terminated reachability into account here
-
       val newlyDetectedUnreachableMembers = localMembers filterNot { member ⇒
         member.uniqueAddress == selfUniqueAddress ||
           localOverview.reachability.status(selfUniqueAddress, member.uniqueAddress) == Reachability.Unreachable ||
+          localOverview.reachability.status(selfUniqueAddress, member.uniqueAddress) == Reachability.Terminated ||
           failureDetector.isAvailable(member.address)
       }
 
@@ -944,7 +941,6 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
     if (validNodeForGossip(node))
       clusterCore(node.address) ! GossipStatus(selfUniqueAddress, latestGossip.version)
 
-  // FIXME #2307 is aggregated reachability check too strict, should we only look for reachability from this node, but in that case the ignore check in receiveGossip should also be changed
   def validNodeForGossip(node: UniqueAddress): Boolean =
     (node != selfUniqueAddress && latestGossip.hasMember(node) &&
       latestGossip.overview.reachability.isReachable(node))

@@ -38,10 +38,10 @@ object MultiNodeClusterSpec {
       jmx.enabled                         = off
       gossip-interval                     = 200 ms
       leader-actions-interval             = 200 ms
-      unreachable-nodes-reaper-interval   = 200 ms
+      unreachable-nodes-reaper-interval   = 500 ms
       periodic-tasks-initial-delay        = 300 ms
       publish-stats-interval              = 0 s # always, when it happens
-      failure-detector.heartbeat-interval = 400 ms
+      failure-detector.heartbeat-interval = 500 ms
     }
     akka.loglevel = INFO
     akka.log-dead-letters = off

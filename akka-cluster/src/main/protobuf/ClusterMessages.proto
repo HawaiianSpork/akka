@@ -122,15 +122,20 @@ message GossipOverview {
     required VectorClock version = 2;
   }
   repeated Seen seen = 1;
-  repeated Reachability reachability = 2;
+  repeated ObserverReachability observerReachability = 2;
 }
 
 /**
  * Reachability
  */
-message Reachability {
-  required int32 observerAddressIndex = 1;
-  required int32 subjectAddressIndex = 2;
+message ObserverReachability {
+  required int32 addressIndex = 1;
+  required int64 version = 4;
+  repeated SubjectReachability subjectReachability = 2;
+}
+
+message SubjectReachability {
+  required int32 addressIndex = 1;
   required ReachabilityStatus status = 3;
   required int64 version = 4;
 }

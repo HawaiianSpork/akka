@@ -97,7 +97,7 @@ abstract class MBeanSpec
 
     val fourthAddress = address(fourth)
 
-    "format cluster status as JSON with full reachability info" taggedAs LongRunningTest in within(20 seconds) {
+    "format cluster status as JSON with full reachability info" taggedAs LongRunningTest in within(30 seconds) {
       runOn(first) {
         testConductor.exit(fourth, 0).await
       }
