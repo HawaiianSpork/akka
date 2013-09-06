@@ -178,7 +178,7 @@ abstract class SurviveNetworkInstabilitySpec
     }
 
     "heal after unreachable when ring is changed" taggedAs LongRunningTest in within(45.seconds) {
-      val joining = Vector(sixth, seventh, eighth)
+      val joining = Vector(sixth, seventh)
       val others = Vector(second, third, fourth, fifth)
       runOn(first) {
         for (role1 ← (joining :+ first); role2 ← others) {
@@ -214,13 +214,16 @@ abstract class SurviveNetworkInstabilitySpec
       }
 
       enterBarrier("repair-5")
-      awaitAllReachable()
-      awaitMembersUp(roles.size)
+      runOn((joining ++ others): _*) {
+        awaitAllReachable()
+        // eighth not joined yet
+        awaitMembersUp(roles.size - 1)
+      }
       enterBarrier("after-5")
     }
 
     "down and remove quarantined node" taggedAs LongRunningTest in within(45.seconds) {
-      val others = Vector(first, third, fourth, fifth, sixth, seventh, eighth)
+      val others = Vector(first, third, fourth, fifth, sixth, seventh)
 
       runOn(second) {
         val sysMsgBufferSize = system.asInstanceOf[ExtendedActorSystem].provider.asInstanceOf[RemoteActorRefProvider].
@@ -244,7 +247,7 @@ abstract class SurviveNetworkInstabilitySpec
 
       runOn(first) {
         for (role ← others)
-          testConductor.blackhole(role, second, Direction.Both).await
+          testConductor.blackhole(second, role, Direction.Send).await
       }
       enterBarrier("blackhole-6")
 
@@ -264,6 +267,68 @@ abstract class SurviveNetworkInstabilitySpec
       }
 
       enterBarrier("after-6")
+    }
+
+    "continue and move Joining to Up after downing of one half" taggedAs LongRunningTest in within(45.seconds) {
+      // note that second is already removed in previous step
+      val side1 = Vector(first, third, fourth)
+      val side1AfterJoin = side1 :+ eighth
+      val side2 = Vector(fifth, sixth, seventh)
+      runOn(first) {
+        for (role1 ← side1AfterJoin; role2 ← side2) {
+          testConductor.blackhole(role1, role2, Direction.Both).await
+        }
+      }
+      enterBarrier("blackhole-7")
+
+      runOn(side1: _*) { assertUnreachable(side2: _*) }
+      runOn(side2: _*) { assertUnreachable(side1: _*) }
+
+      enterBarrier("unreachable-7")
+
+      runOn(eighth) {
+        cluster.join(third)
+      }
+      runOn(fourth) {
+        for (role2 ← side2) {
+          cluster.down(role2)
+        }
+      }
+
+      enterBarrier("downed-7")
+
+      runOn(side1AfterJoin: _*) {
+        // side2 removed
+        val expected = (side1AfterJoin map address).toSet
+        awaitAssert(clusterView.members.map(_.address) must be(expected))
+        awaitAssert(clusterView.members.collectFirst { case m if m.address == address(eighth) ⇒ m.status } must be(
+          Some(MemberStatus.Up)))
+      }
+
+      enterBarrier("side2-removed")
+
+      runOn(first) {
+        for (role1 ← side1AfterJoin; role2 ← side2) {
+          testConductor.passThrough(role1, role2, Direction.Both).await
+        }
+      }
+      enterBarrier("repair-7")
+
+      // side2 should not detect side1 as reachable again
+      Thread.sleep(10000)
+
+      runOn(side1AfterJoin: _*) {
+        val expected = (side1AfterJoin map address).toSet
+        clusterView.members.map(_.address) must be(expected)
+      }
+
+      runOn(side2: _*) {
+        val expected = ((side2 ++ side1) map address).toSet
+        clusterView.members.map(_.address) must be(expected)
+        assertUnreachable(side1: _*)
+      }
+
+      enterBarrier("after-7")
     }
 
   }
